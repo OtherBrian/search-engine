@@ -136,6 +136,47 @@ def vsm_queries(queries_dict, docs_dict, inverted_index):
 
     return queries_dict
 
+def bm25(queries_dict, docs_dict, inverted_matrix):
+
+    def bm25_query_result(query, docs_dict, inverted_matrix):
+        # k and b parameters. Using suggested defaults.
+        k = 1.2
+        b = 0.75
+    
+        # Following two values are consistent, so calculating outside of the loops.
+        avgdl = sum(len(docs_dict[doc]['combined_content']) for doc in docs_dict.keys()) / len(docs_dict)
+        n = len(docs_dict)
+
+        # Create the vector to store the results later
+        results_vec = np.zeros(len(docs_dict))
+
+        # Need a score for each doc
+        for doc in docs_dict:
+            bm25_score = 0
+            # Calculate the bm25 score for each query word for each doc. 
+            # The score for each word is added to the overall bm25_score for the doc
+            for word in query:
+                if word in inverted_index:
+                    n_q = len(inverted_index[word])
+                    idf = np.log(((n - n_q + 0.5) / (n_q + 0.5)) + 1)
+                    freq = docs_dict[doc]['combined_content'].count(word)
+                    tf = (freq * (k + 1)) / (freq + k * (1 - b + b * len(docs_dict[doc]['combined_content']) / avgdl))
+                    bm25_score += tf * idf
+            # Doc numbers start from 1, so minus 1 to account for zero indexing
+            results_vec[int(doc) - 1] = bm25_score
+
+        # Get the 100 docs with the highest bm25 score in descending order
+        most_similar_doc_index = np.argsort(results_vec,-1)[::-1][:100]
+
+        # Adding 1 to the indexes again so that they align with the actual doc numbers.
+        return list(most_similar_doc_index + 1), list(np.array(results_vec)[most_similar_doc_index])
+    
+    for query in queries_dict:
+                queries_dict[query]['bm25_top_docs'], queries_dict[query]['bm25_scores'] = bm25_query_result(queries_dict[query]['title'], 
+                                                                                           docs_dict, 
+                                                                                           inverted_index)
+    return queries_dict
+
 
 if __name__ == '__main__':
     # Saving the file path to a variable
@@ -159,6 +200,8 @@ if __name__ == '__main__':
 
     # Running the queries through each implementation
     queries_dict = vsm_queries(queries_dict, docs_dict, inverted_index)
+    queries_dict = bm25(queries_dict, docs_dict, inverted_index)
 
     # Writing the results
     output_results(queries_dict, 'vsm_top_docs', 'vsm_scores', 'vsm_results.txt')
+    output_results(queries_dict, 'bm25_top_docs', 'bm25_scores', 'bm25_results.txt')
