@@ -57,16 +57,20 @@ def queries_xml_to_dict(root):
     stemmer = PorterStemmer()
 
     queries_dict = {}
-
+    # My results numbers don't align with the results file. Trying a counter instead.
+    num_counter = 1
+    
     for query in root.findall('top'):
         # Save values to be added to the dictionary
-        num = query.find('num').text.strip()
+        num = num_counter
         title = query.find('title').text
 
         # Create a nested dictionary for each doc number
         queries_dict[num] = {}
 
         queries_dict[num]['title'] = token_stem_stopwords(title, tokenizer, stemmer)
+        
+        num_counter += 1
  
     
     return queries_dict
