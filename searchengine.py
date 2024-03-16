@@ -140,6 +140,7 @@ def vsm_queries(queries_dict, docs_dict, inverted_index):
 
     return queries_dict
 
+## BM25 Implementation
 def bm25(queries_dict, docs_dict, inverted_matrix):
 
     def bm25_query_result(query, docs_dict, inverted_matrix):
@@ -182,6 +183,52 @@ def bm25(queries_dict, docs_dict, inverted_matrix):
     return queries_dict
 
 
+## Language Model Implementation
+def language_model(queries_dict, docs_dict, inverted_index, _lambda=0.5):
+    corpus_length = sum([docs_dict[doc]['length'] for doc in docs_dict])
+    
+    def language_model_query_result(query, docs_dict, inverted_index, corpus_length, _lambda):
+
+        # Using ones for results_vec as we'll be using multiplication
+        results_vec = np.ones(len(docs_dict))
+
+        
+        for word in query:
+            # Get the probability of each word across the entire corpus
+            word_frequency_corpus = 0
+            if word in inverted_index:
+                for doc in inverted_index[word]:
+                    word_frequency_corpus += docs_dict[doc]['combined_content'].count(word)
+                word_frequency_corpus_prob = word_frequency_corpus / corpus_length
+                # Some words appear to be missing from the entire corpus, so adding laplace smoothing to the corpus probability
+            else:
+                word_frequency_corpus_prob = 1 / (corpus_length + 1)
+                
+            word_frequency_corpus_prob = word_frequency_corpus / corpus_length + 1 
+
+            # Get the probability of each word in each documentg
+            for doc in docs_dict:
+                word_length_doc = docs_dict[doc]['length']
+                word_frequency_doc = docs_dict[doc]['combined_content'].count(word)
+                word_frequency_doc_prob = word_frequency_doc / word_length_doc
+
+                # Calculate the maximum likelihood estimate for the word
+                mle = ((1-_lambda)*word_frequency_doc_prob) + (_lambda * word_frequency_corpus_prob)
+
+                # Multiply the current result for this doc by the individual word MLE
+                results_vec[int(doc) - 1] *= mle
+
+        most_similar_doc_index = np.argsort(results_vec,-1)[::-1][:100]
+        
+        # Adding 1 to the indexes again so that they align with the actual doc numbers.
+        return list(most_similar_doc_index + 1), list(np.array(results_vec)[most_similar_doc_index])
+
+
+    for query in queries_dict:
+        queries_dict[query]['lm_top_docs'], queries_dict[query]['lm_scores'] = language_model_query_result(queries_dict[query]['title'], docs_dict, inverted_index, corpus_length,_lambda)
+        
+    return queries_dict
+
 if __name__ == '__main__':
     # Saving the file path to a variable
     xml_file_path = 'cranfield-trec-dataset-main/cran.all.1400.xml'
@@ -205,7 +252,9 @@ if __name__ == '__main__':
     # Running the queries through each implementation
     queries_dict = vsm_queries(queries_dict, docs_dict, inverted_index)
     queries_dict = bm25(queries_dict, docs_dict, inverted_index)
+    queries_dict = language_model(queries_dict, docs_dict, inverted_index)
 
     # Writing the results
     output_results(queries_dict, 'vsm_top_docs', 'vsm_scores', 'vsm_results.txt')
     output_results(queries_dict, 'bm25_top_docs', 'bm25_scores', 'bm25_results.txt')
+    output_results(queries_dict, 'lm_top_docs', 'lm_scores', 'lm_results.txt')
