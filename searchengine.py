@@ -146,7 +146,7 @@ def create_inverted_index(docs_dict):
 def vsm_queries(queries_dict, docs_dict, inverted_index):
 
     '''
-    Iterates through each query and each document, scoring each document's relevancy to the query.
+    Iterates through each query and each document, scoring each document's relevancy to the query via vector space model.
     The top 100 document numbers and their scores are returned via two separate lists.
     '''
 
@@ -237,33 +237,51 @@ def vsm_queries(queries_dict, docs_dict, inverted_index):
 ### BM25 implementation ###
 def bm25(queries_dict, docs_dict, inverted_matrix):
 
+    '''
+    Iterates through each query and each document, scoring each document's relevancy to the query via bm25.
+    The top 100 document numbers and their scores are returned via two separate lists.
+    '''
+
     print("Ranking via BM25...")
 
     def bm25_query_result(query, docs_dict, inverted_matrix):
-        # k and b parameters. Using suggested defaults.
+
+        '''
+        Takes a given query, the documents dictionary, and inverted index.
+        Returns a list of the 100 best matched document numbers and their scores as two separate lists.
+        '''
+
+        # k and b parameters for BM25. Using the suggested defaults.
         k = 1.2
         b = 0.75
     
-        # Following two values are consistent, so calculating outside of the loops.
-        avgdl = sum(len(docs_dict[doc]['combined_content']) for doc in docs_dict.keys()) / len(docs_dict)
+        # The following two values are consistent for all documents, so calculating outside of the loops.
+        average_doc_length = sum(len(docs_dict[doc]['combined_content']) for doc in docs_dict.keys()) / len(docs_dict)
         n = len(docs_dict)
 
-        # Create the vector to store the results later
+        # Create a vector to store the results for each document.
         results_vec = np.zeros(len(docs_dict))
 
-        # Need a score for each doc
+        # Iterate through each doc
         for doc in docs_dict:
             bm25_score = 0
             # Calculate the bm25 score for each query word for each doc. 
-            # The score for each word is added to the overall bm25_score for the doc
+            # The score for each word is added to the overall bm25_score for the doc.
             for word in set(query):
                 if word in inverted_index:
+                    # Calculating the idf component.
                     n_q = len(inverted_index[word])
                     idf = np.log(((n - n_q + 0.5) / (n_q + 0.5)) + 1)
                     freq = docs_dict[doc]['combined_content'].count(word)
-                    tf = (freq * (k + 1)) / (freq + k * (1 - b + b * len(docs_dict[doc]['combined_content']) / avgdl))
+
+                    # Calculating the tf component.
+                    tf = (freq * (k + 1)) / (freq + k * (1 - b + b * len(docs_dict[doc]['combined_content']) / average_doc_length))
+
+                    # Calculate the score for the given word, and add to the document's overall score.
                     bm25_score += tf * idf
-            # Doc numbers start from 1, so minus 1 to account for zero indexing
+
+            # Store the score for the document in the results_vec array.     
+            # Doc numbers start from 1, so minus 1 to account for zero indexing.
             results_vec[int(doc) - 1] = bm25_score
 
         # Get the 100 docs with the highest bm25 score in descending order
@@ -279,38 +297,56 @@ def bm25(queries_dict, docs_dict, inverted_matrix):
     return queries_dict
 
 ### Language Model implementation ###
-def language_model(queries_dict, docs_dict, inverted_index, _lambda=0.5):
+def language_model(queries_dict, docs_dict, inverted_index, _lambda=0.5): # Defaulting lambda to 0.5
+
+    '''
+    Iterates through each query and each document, scoring each document's relevancy to the query via a multinomial language model.
+    The top 100 document numbers and their scores are returned via two separate lists.
+    '''
 
     print("Ranking via Language Model...")
 
+    # Corpus length will be consistent for all queries and documents, so calculating it the once.
     corpus_length = sum([docs_dict[doc]['length'] for doc in docs_dict])
     
     def language_model_query_result(query, docs_dict, inverted_index, corpus_length, _lambda):
 
-        # Using ones for results_vec as we'll be using multiplication
+
+        '''
+        Takes a given query, the documents dictionary, inverted index, corpus_length and _lambda.
+        Returns a list of the 100 best matched document numbers and their scores as two separate lists.
+        '''
+
+        # Using ones instead of zeros for results_vec as we'll be using multiplication here.
         results_vec = np.ones(len(docs_dict))
 
         
         for word in query:
-            # Get the probability of each word across the entire corpus
+
+            # Get the probability of the word in the query across the entire corpus.
             word_frequency_corpus = 0
+
+            # Using the inverted_index so that I don't have to iterate through unneccessary docs for this bit.
             if word in inverted_index:
                 for doc in inverted_index[word]:
                     word_frequency_corpus += docs_dict[doc]['combined_content'].count(word)
                 word_frequency_corpus_prob = word_frequency_corpus / corpus_length
-                # Some words appear to be missing from the entire corpus, so adding laplace smoothing to the corpus probability
+                # Some words (about six) appear to be missing from the entire corpus, so adding laplace smoothing to the corpus probability for those words.
             else:
                 word_frequency_corpus_prob = 1 / (corpus_length + 1)
-                
+            
+            # Calculate the word frequency across the entire corpus. 
+            # As I've used laplace smoothing for some words, I am adding 1 to the corpus length to balance this.
+            # Debatable whether or not this is necessary, as it's just a handful of words, but probabilities should sum to 1 or less.
             word_frequency_corpus_prob = word_frequency_corpus / corpus_length + 1 
 
-            # Get the probability of each word in each documentg
+            # Get the probability of the word in each document.
             for doc in docs_dict:
                 word_length_doc = docs_dict[doc]['length']
                 word_frequency_doc = docs_dict[doc]['combined_content'].count(word)
                 word_frequency_doc_prob = word_frequency_doc / word_length_doc
 
-                # Calculate the maximum likelihood estimate for the word
+                # Calculate the maximum likelihood estimate for the word.
                 mle = ((1-_lambda)*word_frequency_doc_prob) + (_lambda * word_frequency_corpus_prob)
 
                 # Multiply the current result for this doc by the individual word MLE
@@ -319,6 +355,7 @@ def language_model(queries_dict, docs_dict, inverted_index, _lambda=0.5):
         most_similar_doc_index = np.argsort(results_vec,-1)[::-1][:100]
         
         # Adding 1 to the indexes again so that they align with the actual doc numbers.
+        # Doc numbers start from 1, so minus 1 to account for zero indexing.
         return list(most_similar_doc_index + 1), list(np.array(results_vec)[most_similar_doc_index])
 
 
@@ -326,6 +363,7 @@ def language_model(queries_dict, docs_dict, inverted_index, _lambda=0.5):
         queries_dict[query]['lm_top_docs'], queries_dict[query]['lm_scores'] = language_model_query_result(queries_dict[query]['title'], docs_dict, inverted_index, corpus_length,_lambda)
         
     return queries_dict
+
 
 if __name__ == '__main__':
 
