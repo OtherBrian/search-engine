@@ -220,7 +220,7 @@ def vsm_queries(queries_dict, docs_dict, inverted_index):
         most_similar_doc_index = np.argsort(similarity_matrix,-1)[::-1][:100]
         
         # Return the highest 100 indices, and their respective scores.
-        return list(most_similar_doc_index), list(np.array(similarity_matrix)[most_similar_doc_index])
+        return list(most_similar_doc_index + 1), list(np.array(similarity_matrix)[most_similar_doc_index])
 
     # Create the term document matrix
     term_doc_matrix = create_term_doc_matrix(docs_dict, inverted_index)
